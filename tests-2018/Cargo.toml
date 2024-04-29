@@ -20,7 +20,7 @@ std = []
 
 [dependencies]
 anyhow = "1.0.1"
-bytes = "1"
+bytes = { version = "1", git = "https://github.com/tokio-rs/bytes", rev = "cb7f844" }
 cfg-if = "1"
 prost = { path = "../prost" }
 prost-types = { path = "../prost-types" }

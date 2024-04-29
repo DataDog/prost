@@ -22,7 +22,7 @@ path = "../tests/src/lib.rs"
 
 [dependencies]
 anyhow = { version = "1.0.45", default-features = false }
-bytes = { version = "1", default-features = false }
+bytes = { version = "1", default-features = false, git = "https://github.com/tokio-rs/bytes", rev = "cb7f844" }
 cfg-if = "1"
 prost = { path = "../prost", default-features = false, features = ["derive"] }
 prost-types = { path = "../prost-types", default-features = false }

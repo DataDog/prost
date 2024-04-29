@@ -21,7 +21,7 @@ format = ["dep:prettyplease", "dep:syn"]
 cleanup-markdown = ["dep:pulldown-cmark", "dep:pulldown-cmark-to-cmark"]
 
 [dependencies]
-bytes = { version = "1", default-features = false }
+bytes = { version = "1", default-features = false, git = "https://github.com/tokio-rs/bytes", rev = "cb7f844" }
 heck = { version = ">=0.4, <=0.5" }
 itertools = { version = ">=0.10, <=0.12", default-features = false, features = ["use_alloc"] }
 log = "0.4.4"
