@@ -65,3 +65,6 @@ debug = true
 [[bench]]
 name = "varint"
 harness = false
+
+[patch.crates-io]
+bytes = { git = "https://github.com/tokio-rs/bytes", rev = "cb7f844" }
