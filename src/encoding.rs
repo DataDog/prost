@@ -793,64 +793,32 @@ macro_rules! length_delimited {
     };
 }
 
+pub trait StringAdapter: sealed::StringAdapter {}
+
 pub mod string {
     use super::*;
 
-    pub fn encode<B>(tag: u32, value: &String, buf: &mut B)
+    pub fn encode<A, B>(tag: u32, value: &A, buf: &mut B)
     where
+        A: StringAdapter,
         B: BufMut,
     {
-        encode_key(tag, WireType::LengthDelimited, buf);
-        encode_varint(value.len() as u64, buf);
-        buf.put_slice(value.as_bytes());
+        value.encode(tag, buf)
     }
-    pub fn merge<B>(
+    pub fn merge<A, B>(
         wire_type: WireType,
-        value: &mut String,
+        value: &mut A,
         buf: &mut B,
         ctx: DecodeContext,
     ) -> Result<(), DecodeError>
     where
+        A: StringAdapter,
         B: Buf,
     {
-        // ## Unsafety
-        //
-        // `string::merge` reuses `bytes::merge`, with an additional check of utf-8
-        // well-formedness. If the utf-8 is not well-formed, or if any other error occurs, then the
-        // string is cleared, so as to avoid leaking a string field with invalid data.
-        //
-        // This implementation uses the unsafe `String::as_mut_vec` method instead of the safe
-        // alternative of temporarily swapping an empty `String` into the field, because it results
-        // in up to 10% better performance on the protobuf message decoding benchmarks.
-        //
-        // It's required when using `String::as_mut_vec` that invalid utf-8 data not be leaked into
-        // the backing `String`. To enforce this, even in the event of a panic in `bytes::merge` or
-        // in the buf implementation, a drop guard is used.
-        unsafe {
-            struct DropGuard<'a>(&'a mut Vec<u8>);
-            impl<'a> Drop for DropGuard<'a> {
-                #[inline]
-                fn drop(&mut self) {
-                    self.0.clear();
-                }
-            }
-
-            let drop_guard = DropGuard(value.as_mut_vec());
-            bytes::merge_one_copy(wire_type, drop_guard.0, buf, ctx)?;
-            match str::from_utf8(drop_guard.0) {
-                Ok(_) => {
-                    // Success; do not clear the bytes.
-                    mem::forget(drop_guard);
-                    Ok(())
-                }
-                Err(_) => Err(DecodeError::new(
-                    "invalid string value: data is not UTF-8 encoded",
-                )),
-            }
-        }
+        value.merge(wire_type, buf, ctx)
     }
 
-    length_delimited!(String);
+    length_delimited!(impl StringAdapter);
 
     #[cfg(test)]
     mod test {
@@ -862,7 +830,7 @@ pub mod string {
         proptest! {
             #[test]
             fn check(value: String, tag in MIN_TAG..=MAX_TAG) {
-                super::test::check_type(value, tag, WireType::LengthDelimited,
+                super::test::check_type::<String, String>(value, tag, WireType::LengthDelimited,
                                         encode, merge, encoded_len)?;
             }
             #[test]
@@ -871,70 +839,15 @@ pub mod string {
                                                    encode_repeated, merge_repeated,
                                                    encoded_len_repeated)?;
             }
-        }
-    }
-}
 
-/// A [`ByteString`] is just a wrapper on top of a normal [`Bytes`], so we can re-use a bunch
-/// of logic.
-pub mod byte_string {
-    use self::sealed::BytesAdapter;
-
-    use super::*;
-
-    pub fn encode<B>(tag: u32, value: &ByteString, buf: &mut B)
-    where
-        B: BufMut,
-    {
-        encode_key(tag, WireType::LengthDelimited, buf);
-        encode_varint(value.len() as u64, buf);
-        value.as_bytes().append_to(buf);
-    }
-    pub fn merge<B>(
-        wire_type: WireType,
-        value: &mut ByteString,
-        buf: &mut B,
-        _ctx: DecodeContext,
-    ) -> Result<(), DecodeError>
-    where
-        B: Buf,
-    {
-        #[allow(unused_imports)]
-        use crate::alloc::string::ToString;
-
-        check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let len = decode_varint(buf)?;
-        if len > buf.remaining() as u64 {
-            return Err(DecodeError::new("buffer underflow"));
-        }
-        let len = len as usize;
-
-        // If we must copy, make sure to copy only once.
-        let mut new_value = Bytes::new();
-        new_value.replace_with(buf.take(len));
-
-        *value = ByteString::try_from(new_value).map_err(|e| DecodeError::new(e.to_string()))?;
-        Ok(())
-    }
-
-    length_delimited!(ByteString);
-
-    #[cfg(test)]
-    mod test {
-        use proptest::prelude::*;
-
-        use super::super::test::{check_collection_type, check_type};
-        use super::*;
-
-        proptest! {
             #[test]
-            fn check(value: String, tag in MIN_TAG..=MAX_TAG) {
+            fn check_bytestring(value: String, tag in MIN_TAG..=MAX_TAG) {
                 let value = ByteString::from(value);
-                super::test::check_type(value, tag, WireType::LengthDelimited,
+                super::test::check_type::<ByteString, ByteString>(value, tag, WireType::LengthDelimited,
                                         encode, merge, encoded_len)?;
             }
             #[test]
-            fn check_repeated(value: Vec<String>, tag in MIN_TAG..=MAX_TAG) {
+            fn check_repeated_bytestring(value: Vec<String>, tag in MIN_TAG..=MAX_TAG) {
                 let value = value.into_iter().map(ByteString::from).collect::<Vec<_>>();
                 super::test::check_collection_type(value, tag, WireType::LengthDelimited,
                                                    encode_repeated, merge_repeated,
@@ -947,6 +860,9 @@ pub mod byte_string {
 pub trait BytesAdapter: sealed::BytesAdapter {}
 
 mod sealed {
+    use super::DecodeContext;
+    use super::DecodeError;
+    use super::WireType;
     use super::{Buf, BufMut};
 
     pub trait BytesAdapter: Default + Sized + 'static {
@@ -965,6 +881,23 @@ mod sealed {
         fn is_empty(&self) -> bool {
             self.len() == 0
         }
+    }
+
+    pub trait StringAdapter: Default + Sized + 'static {
+        fn len(&self) -> usize;
+
+        fn encode<B>(&self, tag: u32, buf: &mut B)
+        where
+            B: BufMut;
+
+        fn merge<B>(
+            &mut self,
+            wire_type: WireType,
+            buf: &mut B,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError>
+        where
+            B: Buf;
     }
 }
 
@@ -1014,6 +947,115 @@ impl sealed::BytesAdapter for Vec<u8> {
     }
 }
 
+impl StringAdapter for String {}
+
+impl sealed::StringAdapter for String {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn encode<B>(&self, tag: u32, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        encode_key(tag, WireType::LengthDelimited, buf);
+        encode_varint(self.len() as u64, buf);
+        buf.put_slice(self.as_bytes());
+    }
+
+    fn merge<B>(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        B: Buf,
+    {
+        // ## Unsafety
+        //
+        // `string::merge` reuses `bytes::merge`, with an additional check of utf-8
+        // well-formedness. If the utf-8 is not well-formed, or if any other error occurs, then the
+        // string is cleared, so as to avoid leaking a string field with invalid data.
+        //
+        // This implementation uses the unsafe `String::as_mut_vec` method instead of the safe
+        // alternative of temporarily swapping an empty `String` into the field, because it results
+        // in up to 10% better performance on the protobuf message decoding benchmarks.
+        //
+        // It's required when using `String::as_mut_vec` that invalid utf-8 data not be leaked into
+        // the backing `String`. To enforce this, even in the event of a panic in `bytes::merge` or
+        // in the buf implementation, a drop guard is used.
+        unsafe {
+            struct DropGuard<'a>(&'a mut Vec<u8>);
+            impl<'a> Drop for DropGuard<'a> {
+                #[inline]
+                fn drop(&mut self) {
+                    self.0.clear();
+                }
+            }
+
+            let drop_guard = DropGuard(self.as_mut_vec());
+            bytes::merge_one_copy(wire_type, drop_guard.0, buf, ctx)?;
+            match str::from_utf8(drop_guard.0) {
+                Ok(_) => {
+                    // Success; do not clear the bytes.
+                    mem::forget(drop_guard);
+                    Ok(())
+                }
+                Err(_) => Err(DecodeError::new(
+                    "invalid string value: data is not UTF-8 encoded",
+                )),
+            }
+        }
+    }
+}
+
+impl StringAdapter for ByteString {}
+
+impl sealed::StringAdapter for ByteString {
+    fn len(&self) -> usize {
+        self.as_bytes().len()
+    }
+
+    fn encode<B>(&self, tag: u32, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        use crate::encoding::sealed::BytesAdapter;
+
+        encode_key(tag, WireType::LengthDelimited, buf);
+        encode_varint(self.len() as u64, buf);
+        self.as_bytes().append_to(buf);
+    }
+
+    fn merge<B>(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut B,
+        _ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        B: Buf,
+    {
+        #[allow(unused_imports)]
+        use crate::alloc::string::ToString;
+        use crate::encoding::sealed::BytesAdapter;
+
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        let len = decode_varint(buf)?;
+        if len > buf.remaining() as u64 {
+            return Err(DecodeError::new("buffer underflow"));
+        }
+        let len = len as usize;
+
+        // If we must copy, make sure to copy only once.
+        let mut new_value = Bytes::new();
+        new_value.replace_with(buf.take(len));
+
+        *self = ByteString::try_from(new_value).map_err(|e| DecodeError::new(e.to_string()))?;
+        Ok(())
+    }
+}
 pub mod bytes {
     use super::*;
 

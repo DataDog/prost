@@ -319,9 +319,22 @@ impl Field {
                 builder.finish()
             }
         };
+
+        // If it's a string, it needs to generic due to our use of bytestring.
+        if let scalar::Ty::String(_) = self.key_ty {
+            return quote! {
+                struct #wrapper_name<'a>(&'a dyn ::core::fmt::Debug);
+                impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                        self.0.fmt(f)
+                    }
+                }
+            };
+        }
+
         match &self.value_ty {
             ValueTy::Scalar(ty) => {
-                if let scalar::Ty::Bytes(_) = *ty {
+                if matches!(ty, scalar::Ty::Bytes(_)) || matches!(ty, scalar::Ty::String(_)) {
                     return quote! {
                         struct #wrapper_name<'a>(&'a dyn ::core::fmt::Debug);
                         impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {

@@ -13,7 +13,7 @@ use bytestring::ByteString;
 
 use crate::{
     encoding::{
-        bool, byte_string, bytes, double, float, int32, int64, skip_field, string, uint32, uint64,
+        bool, bytes, double, float, int32, int64, skip_field, string, uint32, uint64,
         DecodeContext, WireType,
     },
     DecodeError, Message,
@@ -330,7 +330,7 @@ impl Message for ByteString {
         B: BufMut,
     {
         if !self.is_empty() {
-            byte_string::encode(1, self, buf)
+            string::encode(1, self, buf)
         }
     }
     fn merge_field<B>(
@@ -344,14 +344,14 @@ impl Message for ByteString {
         B: Buf,
     {
         if tag == 1 {
-            byte_string::merge(wire_type, self, buf, ctx)
+            string::merge(wire_type, self, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
     fn encoded_len(&self) -> usize {
         if !self.is_empty() {
-            byte_string::encoded_len(1, self)
+            string::encoded_len(1, self)
         } else {
             0
         }

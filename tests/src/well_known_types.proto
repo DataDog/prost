@@ -50,6 +50,17 @@ message TestTwo {
   map<string, string> string_dict = 1;
 }
 
+message TestThree {
+  map<string, Foo> string_dict = 1;
+}
+
+message TestFour {
+  string test = 1;
+}
+
+message TestFive {
+  repeated string test = 1;
+}
 
 message Bar {
     google.protobuf.Empty ee = 1;
