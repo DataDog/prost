@@ -16,6 +16,7 @@ use core::u32;
 use core::usize;
 
 use ::bytes::{Buf, BufMut, Bytes};
+use bytestring::ByteString;
 
 use crate::DecodeError;
 use crate::Message;
@@ -866,6 +867,75 @@ pub mod string {
             }
             #[test]
             fn check_repeated(value: Vec<String>, tag in MIN_TAG..=MAX_TAG) {
+                super::test::check_collection_type(value, tag, WireType::LengthDelimited,
+                                                   encode_repeated, merge_repeated,
+                                                   encoded_len_repeated)?;
+            }
+        }
+    }
+}
+
+/// A [`ByteString`] is just a wrapper on top of a normal [`Bytes`], so we can re-use a bunch
+/// of logic.
+pub mod byte_string {
+    use self::sealed::BytesAdapter;
+
+    use super::*;
+
+    pub fn encode<B>(tag: u32, value: &ByteString, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        encode_key(tag, WireType::LengthDelimited, buf);
+        encode_varint(value.len() as u64, buf);
+        value.as_bytes().append_to(buf);
+    }
+    pub fn merge<B>(
+        wire_type: WireType,
+        value: &mut ByteString,
+        buf: &mut B,
+        _ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        B: Buf,
+    {
+        #[allow(unused_imports)]
+        use crate::alloc::string::ToString;
+
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        let len = decode_varint(buf)?;
+        if len > buf.remaining() as u64 {
+            return Err(DecodeError::new("buffer underflow"));
+        }
+        let len = len as usize;
+
+        // If we must copy, make sure to copy only once.
+        let mut new_value = Bytes::new();
+        new_value.replace_with(buf.take(len));
+
+        *value = ByteString::try_from(new_value).map_err(|e| DecodeError::new(e.to_string()))?;
+        Ok(())
+    }
+
+    length_delimited!(ByteString);
+
+    #[cfg(test)]
+    mod test {
+        use proptest::prelude::*;
+
+        use super::super::test::{check_collection_type, check_type};
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn check(value: String, tag in MIN_TAG..=MAX_TAG) {
+                let value = ByteString::from(value);
+                super::test::check_type(value, tag, WireType::LengthDelimited,
+                                        encode, merge, encoded_len)?;
+            }
+            #[test]
+            fn check_repeated(value: Vec<String>, tag in MIN_TAG..=MAX_TAG) {
+                let value = value.into_iter().map(ByteString::from).collect::<Vec<_>>();
                 super::test::check_collection_type(value, tag, WireType::LengthDelimited,
                                                    encode_repeated, merge_repeated,
                                                    encoded_len_repeated)?;

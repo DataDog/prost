@@ -9,10 +9,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use ::bytes::{Buf, BufMut, Bytes};
+use bytestring::ByteString;
 
 use crate::{
     encoding::{
-        bool, bytes, double, float, int32, int64, skip_field, string, uint32, uint64,
+        bool, byte_string, bytes, double, float, int32, int64, skip_field, string, uint32, uint64,
         DecodeContext, WireType,
     },
     DecodeError, Message,
@@ -319,6 +320,52 @@ impl Message for String {
     }
     fn clear(&mut self) {
         self.clear();
+    }
+}
+
+/// `google.protobuf.StringValue`
+impl Message for ByteString {
+    fn encode_raw<B>(&self, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        if !self.is_empty() {
+            byte_string::encode(1, self, buf)
+        }
+    }
+    fn merge_field<B>(
+        &mut self,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        B: Buf,
+    {
+        if tag == 1 {
+            byte_string::merge(wire_type, self, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+    fn encoded_len(&self) -> usize {
+        if !self.is_empty() {
+            byte_string::encoded_len(1, self)
+        } else {
+            0
+        }
+    }
+    fn clear(&mut self) {
+        let mut temp = ByteString::new();
+        core::mem::swap(self, &mut temp);
+
+        let mut temp = temp.into_bytes();
+        temp.clear();
+        // SAFETY: The Bytes we're passing in is empty and thus safe.
+        let mut cleared = unsafe { ByteString::from_bytes_unchecked(temp) };
+
+        core::mem::swap(self, &mut cleared);
     }
 }
 

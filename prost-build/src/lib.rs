@@ -229,6 +229,17 @@ enum BytesType {
     Bytes,
 }
 
+/// The string collection type to output for Protobuf `string` fields.
+#[non_exhaustive]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+enum StringType {
+    /// The [`alloc::collections::Vec::<u8>`] type.
+    #[default]
+    String,
+    /// The [`bytes::Bytes`] type.
+    ByteString,
+}
+
 /// Configuration options for Protobuf code generation.
 ///
 /// This configuration builder can be used to set non-default code generation options.
@@ -237,6 +248,7 @@ pub struct Config {
     service_generator: Option<Box<dyn ServiceGenerator>>,
     map_type: PathMap<MapType>,
     bytes_type: PathMap<BytesType>,
+    string_type: PathMap<StringType>,
     type_attributes: PathMap<String>,
     message_attributes: PathMap<String>,
     enum_attributes: PathMap<String>,
@@ -382,6 +394,37 @@ impl Config {
         for matcher in paths {
             self.bytes_type
                 .insert(matcher.as_ref().to_string(), BytesType::Bytes);
+        }
+        self
+    }
+
+    /// Configure the code generator to generate Rust [`bytestring::ByteString`][1] fields for Protobuf
+    /// [`string`][2] type fields.
+    ///
+    /// # Arguments
+    ///
+    /// **`paths`** - paths to specific fields, messages, or packages which should use a Rust
+    /// `ByteString` for Protobuf `string` fields. Paths are specified in terms of the Protobuf type
+    /// name (not the generated Rust type name). Paths with a leading `.` are treated as fully
+    /// qualified names. Paths without a leading `.` are treated as relative, and are suffix
+    /// matched on the fully qualified field name. If a Protobuf map field matches any of the
+    /// paths, a Rust `ByteString` field is generated instead of the default [`String`][3].
+    ///
+    /// The matching is done on the Protobuf names, before converting to Rust-friendly casing
+    /// standards.
+    ///
+    /// [1]: https://docs.rs/bytestring/latest/bytestring/struct.ByteString.html
+    /// [2]: https://developers.google.com/protocol-buffers/docs/proto3#scalar
+    /// [3]: https://doc.rust-lang.org/std/string/struct.String.html
+    pub fn string<I, S>(&mut self, paths: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.string_type.clear();
+        for matcher in paths {
+            self.string_type
+                .insert(matcher.as_ref().to_string(), StringType::ByteString);
         }
         self
     }
@@ -1298,6 +1341,7 @@ impl default::Default for Config {
             service_generator: None,
             map_type: PathMap::default(),
             bytes_type: PathMap::default(),
+            string_type: PathMap::default(),
             type_attributes: PathMap::default(),
             message_attributes: PathMap::default(),
             enum_attributes: PathMap::default(),

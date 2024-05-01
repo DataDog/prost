@@ -134,6 +134,11 @@ fn main() {
         .compile_protos(&[src.join("well_known_types.proto")], includes)
         .unwrap();
 
+    config
+        .string(["."])
+        .compile_protos(&[src.join("well_known_types.proto")], includes)
+        .unwrap();
+
     let out = std::env::var("OUT_DIR").unwrap();
     let out_path = PathBuf::from(out).join("wellknown_include");
 
@@ -141,6 +146,13 @@ fn main() {
 
     prost_build::Config::new()
         .bytes(["."])
+        .out_dir(out_path.clone())
+        .include_file("wellknown_include.rs")
+        .compile_protos(&[src.join("well_known_types.proto")], includes)
+        .unwrap();
+
+    prost_build::Config::new()
+        .string(["."])
         .out_dir(out_path)
         .include_file("wellknown_include.rs")
         .compile_protos(&[src.join("well_known_types.proto")], includes)

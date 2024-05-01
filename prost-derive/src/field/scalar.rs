@@ -194,7 +194,7 @@ impl Field {
             Kind::Plain(ref default) | Kind::Required(ref default) => {
                 let default = default.typed();
                 match self.ty {
-                    Ty::String | Ty::Bytes(..) => quote!(#ident.clear()),
+                    Ty::String(..) | Ty::Bytes(..) => quote!(#ident.clear()),
                     _ => quote!(#ident = #default),
                 }
             }
@@ -397,9 +397,31 @@ pub enum Ty {
     Sfixed32,
     Sfixed64,
     Bool,
-    String,
+    String(StringTy),
     Bytes(BytesTy),
     Enumeration(Path),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StringTy {
+    String,
+    ByteString,
+}
+
+impl StringTy {
+    fn try_from_str(s: &str) -> Result<Self, Error> {
+        match s {
+            "bytestring" => Ok(StringTy::ByteString),
+            _ => bail!("Invalid bytes type: {}", s),
+        }
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        match self {
+            StringTy::String => quote! { ::prost::alloc::string::String },
+            StringTy::ByteString => quote! { ::prost::bytestring::ByteString },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -441,7 +463,16 @@ impl Ty {
             Meta::Path(ref name) if name.is_ident("sfixed32") => Ty::Sfixed32,
             Meta::Path(ref name) if name.is_ident("sfixed64") => Ty::Sfixed64,
             Meta::Path(ref name) if name.is_ident("bool") => Ty::Bool,
-            Meta::Path(ref name) if name.is_ident("string") => Ty::String,
+            Meta::Path(ref name) if name.is_ident("string") => Ty::String(StringTy::String),
+            Meta::NameValue(MetaNameValue {
+                ref path,
+                value:
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(ref l),
+                        ..
+                    }),
+                ..
+            }) if path.is_ident("string") => Ty::String(StringTy::try_from_str(&l.value())?),
             Meta::Path(ref name) if name.is_ident("bytes") => Ty::Bytes(BytesTy::Vec),
             Meta::NameValue(MetaNameValue {
                 ref path,
@@ -486,7 +517,7 @@ impl Ty {
             "sfixed32" => Ty::Sfixed32,
             "sfixed64" => Ty::Sfixed64,
             "bool" => Ty::Bool,
-            "string" => Ty::String,
+            "string" => Ty::String(StringTy::String),
             "bytes" => Ty::Bytes(BytesTy::Vec),
             s if s.len() > enumeration_len && &s[..enumeration_len] == "enumeration" => {
                 let s = &s[enumeration_len..].trim();
@@ -522,7 +553,7 @@ impl Ty {
             Ty::Sfixed32 => "sfixed32",
             Ty::Sfixed64 => "sfixed64",
             Ty::Bool => "bool",
-            Ty::String => "string",
+            Ty::String(..) => "string",
             Ty::Bytes(..) => "bytes",
             Ty::Enumeration(..) => "enum",
         }
@@ -531,7 +562,7 @@ impl Ty {
     // TODO: rename to 'owned_type'.
     pub fn rust_type(&self) -> TokenStream {
         match self {
-            Ty::String => quote!(::prost::alloc::string::String),
+            Ty::String(ty) => ty.rust_type(),
             Ty::Bytes(ty) => ty.rust_type(),
             _ => self.rust_ref_type(),
         }
@@ -553,7 +584,7 @@ impl Ty {
             Ty::Sfixed32 => quote!(i32),
             Ty::Sfixed64 => quote!(i64),
             Ty::Bool => quote!(bool),
-            Ty::String => quote!(&str),
+            Ty::String(..) => quote!(&str),
             Ty::Bytes(..) => quote!(&[u8]),
             Ty::Enumeration(..) => quote!(i32),
         }
@@ -568,7 +599,7 @@ impl Ty {
 
     /// Returns false if the scalar type is length delimited (i.e., `string` or `bytes`).
     pub fn is_numeric(&self) -> bool {
-        !matches!(self, Ty::String | Ty::Bytes(..))
+        !matches!(self, Ty::String(..) | Ty::Bytes(..))
     }
 }
 
@@ -664,7 +695,12 @@ impl DefaultValue {
             Lit::Int(ref lit) if *ty == Ty::Double => DefaultValue::F64(lit.base10_parse()?),
 
             Lit::Bool(ref lit) if *ty == Ty::Bool => DefaultValue::Bool(lit.value),
-            Lit::Str(ref lit) if *ty == Ty::String => DefaultValue::String(lit.value()),
+            Lit::Str(ref lit)
+                if *ty == Ty::String(StringTy::String)
+                    || *ty == Ty::String(StringTy::ByteString) =>
+            {
+                DefaultValue::String(lit.value())
+            }
             Lit::ByteStr(ref lit)
                 if *ty == Ty::Bytes(BytesTy::Bytes) || *ty == Ty::Bytes(BytesTy::Vec) =>
             {
@@ -773,7 +809,7 @@ impl DefaultValue {
             Ty::Uint64 | Ty::Fixed64 => DefaultValue::U64(0),
 
             Ty::Bool => DefaultValue::Bool(false),
-            Ty::String => DefaultValue::String(String::new()),
+            Ty::String(..) => DefaultValue::String(String::new()),
             Ty::Bytes(..) => DefaultValue::Bytes(Vec::new()),
             Ty::Enumeration(ref path) => DefaultValue::Enumeration(quote!(#path::default())),
         }

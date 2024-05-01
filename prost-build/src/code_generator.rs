@@ -18,7 +18,7 @@ use crate::ast::{Comments, Method, Service};
 use crate::extern_paths::ExternPaths;
 use crate::ident::{to_snake, to_upper_camel};
 use crate::message_graph::MessageGraph;
-use crate::{BytesType, Config, MapType};
+use crate::{BytesType, Config, MapType, StringType};
 
 #[derive(PartialEq)]
 enum Syntax {
@@ -408,6 +408,19 @@ impl<'a> CodeGenerator<'a> {
                 .unwrap_or_default();
             self.buf
                 .push_str(&format!("={:?}", bytes_type.annotation()));
+        }
+
+        if type_ == Type::String {
+            let string_type = self
+                .config
+                .string_type
+                .get_first_field(fq_message_name, field.name())
+                .copied()
+                .unwrap_or_default();
+
+            if let Some(annotation) = string_type.annotation() {
+                self.buf.push_str(&format!("=\"{annotation}\""));
+            }
         }
 
         match field.label() {
@@ -934,7 +947,13 @@ impl<'a> CodeGenerator<'a> {
             Type::Int32 | Type::Sfixed32 | Type::Sint32 | Type::Enum => String::from("i32"),
             Type::Int64 | Type::Sfixed64 | Type::Sint64 => String::from("i64"),
             Type::Bool => String::from("bool"),
-            Type::String => format!("{}::alloc::string::String", prost_path),
+            Type::String => self
+                .config
+                .string_type
+                .get_first_field(fq_message_name, field.name())
+                .copied()
+                .unwrap_or_default()
+                .rust_type(prost_path),
             Type::Bytes => self
                 .config
                 .bytes_type
@@ -1286,6 +1305,24 @@ impl BytesType {
         match self {
             BytesType::Vec => "::prost::alloc::vec::Vec<u8>",
             BytesType::Bytes => "::prost::bytes::Bytes",
+        }
+    }
+}
+
+impl StringType {
+    /// The `prost-derive` annotation type corresponding to the string type.
+    fn annotation(&self) -> Option<&'static str> {
+        match self {
+            StringType::String => None,
+            StringType::ByteString => Some("bytestring"),
+        }
+    }
+
+    /// The fully-qualified Rust type corresponding to the string type.
+    fn rust_type(&self, prost_path: &str) -> String {
+        match self {
+            StringType::String => format!("{}::alloc::string::String", prost_path),
+            StringType::ByteString => "::prost::bytestring::ByteString".to_string(),
         }
     }
 }
