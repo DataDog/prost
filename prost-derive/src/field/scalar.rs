@@ -464,7 +464,6 @@ impl Ty {
             Meta::Path(ref name) if name.is_ident("sfixed64") => Ty::Sfixed64,
             Meta::Path(ref name) if name.is_ident("bool") => Ty::Bool,
             Meta::Path(ref name) if name.is_ident("string") => Ty::String(StringTy::String),
-            Meta::Path(ref name) if name.is_ident("bytestring") => Ty::String(StringTy::ByteString),
             Meta::NameValue(MetaNameValue {
                 ref path,
                 value:
@@ -519,7 +518,6 @@ impl Ty {
             "sfixed64" => Ty::Sfixed64,
             "bool" => Ty::Bool,
             "string" => Ty::String(StringTy::String),
-            "bytestring" => Ty::String(StringTy::ByteString),
             "bytes" => Ty::Bytes(BytesTy::Vec),
             s if s.len() > enumeration_len && &s[..enumeration_len] == "enumeration" => {
                 let s = &s[enumeration_len..].trim();
