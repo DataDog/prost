@@ -49,6 +49,8 @@ mod skip_debug;
 mod submessage_without_package;
 #[cfg(test)]
 mod type_names;
+#[cfg(test)]
+mod well_known_types;
 
 mod test_enum_named_option_value {
     include!(concat!(env!("OUT_DIR"), "/myenum.optionn.rs"));

@@ -46,6 +46,10 @@ message Test {
   map<string, bytes> bytes_dict = 2;
 }
 
+message TestTwo {
+  map<string, string> string_dict = 1;
+}
+
 
 message Bar {
     google.protobuf.Empty ee = 1;
