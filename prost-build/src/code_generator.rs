@@ -534,7 +534,13 @@ impl<'a> CodeGenerator<'a> {
             .get_first_field(fq_message_name, field.name())
             .copied()
             .unwrap_or_default();
-        let key_tag = self.field_type_tag(key);
+        let key_tag = {
+            if key_ty.contains("ByteString") {
+                Cow::Borrowed("bytestring")
+            } else {
+                self.field_type_tag(key)
+            }
+        };
         let value_tag = self.map_value_type_tag(value);
 
         self.buf.push_str(&format!(
@@ -1310,7 +1316,7 @@ impl BytesType {
 }
 
 impl StringType {
-    /// The `prost-derive` annotation type corresponding to the string type.
+    /// The `prost-derive` string type.
     fn annotation(&self) -> Option<&'static str> {
         match self {
             StringType::String => None,
