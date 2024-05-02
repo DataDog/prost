@@ -18,6 +18,7 @@ use core::usize;
 use ::bytes::{Buf, BufMut, Bytes};
 use bytestring::ByteString;
 
+use crate::encoding::bytes::merge_one_copy;
 use crate::DecodeError;
 use crate::Message;
 
@@ -950,10 +951,12 @@ impl sealed::BytesAdapter for Vec<u8> {
 impl StringAdapter for String {}
 
 impl sealed::StringAdapter for String {
+    #[inline]
     fn len(&self) -> usize {
         self.len()
     }
 
+    #[inline]
     fn encode<B>(&self, tag: u32, buf: &mut B)
     where
         B: BufMut,
@@ -963,6 +966,7 @@ impl sealed::StringAdapter for String {
         buf.put_slice(self.as_bytes());
     }
 
+    #[inline]
     fn merge<B>(
         &mut self,
         wire_type: WireType,
@@ -1013,10 +1017,12 @@ impl sealed::StringAdapter for String {
 impl StringAdapter for ByteString {}
 
 impl sealed::StringAdapter for ByteString {
+    #[inline]
     fn len(&self) -> usize {
         self.as_bytes().len()
     }
 
+    #[inline]
     fn encode<B>(&self, tag: u32, buf: &mut B)
     where
         B: BufMut,
@@ -1028,31 +1034,22 @@ impl sealed::StringAdapter for ByteString {
         self.as_bytes().append_to(buf);
     }
 
+    #[inline]
     fn merge<B>(
         &mut self,
         wire_type: WireType,
         buf: &mut B,
-        _ctx: DecodeContext,
+        ctx: DecodeContext,
     ) -> Result<(), DecodeError>
     where
         B: Buf,
     {
         #[allow(unused_imports)]
         use crate::alloc::string::ToString;
-        use crate::encoding::sealed::BytesAdapter;
 
-        check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let len = decode_varint(buf)?;
-        if len > buf.remaining() as u64 {
-            return Err(DecodeError::new("buffer underflow"));
-        }
-        let len = len as usize;
-
-        // If we must copy, make sure to copy only once.
-        let mut new_value = Bytes::new();
-        new_value.replace_with(buf.take(len));
-
-        *self = ByteString::try_from(new_value).map_err(|e| DecodeError::new(e.to_string()))?;
+        let mut temp = Bytes::new();
+        merge_one_copy(wire_type, &mut temp, buf, ctx)?;
+        *self = ByteString::try_from(temp).map_err(|e| DecodeError::new(e.to_string()))?;
         Ok(())
     }
 }

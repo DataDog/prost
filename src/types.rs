@@ -295,6 +295,7 @@ impl Message for String {
             string::encode(1, self, buf)
         }
     }
+
     fn merge_field<B>(
         &mut self,
         tag: u32,
@@ -311,6 +312,7 @@ impl Message for String {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
+
     fn encoded_len(&self) -> usize {
         if !self.is_empty() {
             string::encoded_len(1, self)
@@ -318,6 +320,7 @@ impl Message for String {
             0
         }
     }
+
     fn clear(&mut self) {
         self.clear();
     }
@@ -333,6 +336,7 @@ impl Message for ByteString {
             string::encode(1, self, buf)
         }
     }
+
     fn merge_field<B>(
         &mut self,
         tag: u32,
@@ -349,6 +353,7 @@ impl Message for ByteString {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
+
     fn encoded_len(&self) -> usize {
         if !self.is_empty() {
             string::encoded_len(1, self)
@@ -356,6 +361,7 @@ impl Message for ByteString {
             0
         }
     }
+
     fn clear(&mut self) {
         let mut temp = ByteString::new();
         core::mem::swap(self, &mut temp);
